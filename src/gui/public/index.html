@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>YouTube Comments Extractor</title>
+  <style>
+    :root {
+      --bg: #0f1115;
+      --card: #161a22;
+      --text: #e8ecf3;
+      --muted: #98a2b3;
+      --border: #2a3242;
+      --input: #111722;
+      --accent: #4f8cff;
+      --success: #1bbf73;
+      --warn: #f5b301;
+      --error: #ef4444;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    }
+    .wrap { max-width: 980px; margin: 28px auto; padding: 0 16px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+    h1 { margin: 0 0 12px; font-size: 22px; }
+    p { margin: 0; color: var(--muted); }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; }
+    .field { display: flex; flex-direction: column; gap: 6px; }
+    .full { grid-column: 1 / -1; }
+    label { font-weight: 600; }
+    .hint { color: var(--muted); font-size: 12px; }
+    input, select, button {
+      width: 100%;
+      border: 1px solid var(--border);
+      background: var(--input);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 10px;
+      font-size: 14px;
+    }
+    button {
+      cursor: pointer;
+      background: #1b2433;
+      transition: .15s;
+    }
+    button.primary { background: var(--accent); border-color: #4f8cff; }
+    button:hover { filter: brightness(1.08); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 16px; }
+    .statusRow { display: flex; align-items: center; gap: 10px; margin: 14px 0; }
+    .pill {
+      display: inline-block;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid transparent;
+      font-size: 12px;
+    }
+    .idle { color: #9aa3b2; background: #1f2735; border-color: #2f3a4f; }
+    .running { color: #9cc4ff; background: #1b2a44; border-color: #2b4d84; }
+    .finished { color: #98ebc5; background: #143327; border-color: #1f5e42; }
+    .error { color: #ffb4b4; background: #3a1a1a; border-color: #6a2424; }
+    pre {
+      margin: 0;
+      min-height: 320px;
+      white-space: pre-wrap;
+      background: #0b0f16;
+      border: 1px solid var(--border);
+      color: #d6ffe5;
+      border-radius: 10px;
+      padding: 12px;
+      font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      overflow: auto;
+    }
+    a { color: #88b7ff; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>YouTube Comments Extractor</h1>
+      <p>Use official YouTube Data API v3 (API key). Exports all comments/replies with analysis-ready files.</p>
+
+      <div class="grid">
+        <div class="field full">
+          <label for="video">Video URL or ID</label>
+          <input id="video" value="" />
+          <div class="hint">Example: https://www.youtube.com/watch?v=dQw4w9WgXcQ or dQw4w9WgXcQ</div>
+        </div>
+
+        <div class="field full">
+          <label for="key">YouTube API Key</label>
+          <input id="key" value="" />
+          <div class="hint">Create in Google Cloud. <a href="https://console.cloud.google.com/apis/library/youtube.googleapis.com" target="_blank" rel="noreferrer">Get API key / enable API</a></div>
+        </div>
+
+        <div class="field full">
+          <label for="out">Output folder</label>
+          <input id="out" value="./output" />
+          <div class="hint">Folder where all exports will be written.</div>
+        </div>
+
+        <div class="field">
+          <label for="order">Order</label>
+          <select id="order"><option value="time" selected>time</option><option value="relevance">relevance</option></select>
+          <div class="hint">Sort top-level threads by time or relevance.</div>
+        </div>
+
+        <div class="field">
+          <label for="sleep_ms">Sleep between requests (ms)</label>
+          <input id="sleep_ms" type="number" value="80" />
+          <div class="hint">Polite pacing to reduce rate-limit bursts.</div>
+        </div>
+
+        <div class="field">
+          <label for="cap_per_thread">Reply cap for summary only</label>
+          <input id="cap_per_thread" type="number" value="5" />
+          <div class="hint">Raw exports still contain all replies.</div>
+        </div>
+
+        <div class="field">
+          <label for="dry_run">Dry run</label>
+          <select id="dry_run"><option value="true" selected>true</option><option value="false">false</option></select>
+          <div class="hint">Fetch only first page of threads + first reply page per thread.</div>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button id="start" class="primary">Start</button>
+        <button id="openOut" disabled>Open output folder</button>
+      </div>
+
+      <div class="statusRow">
+        <span id="statusPill" class="pill idle">Idle</span>
+        <span class="hint" id="statusText">Waiting to start.</span>
+      </div>
+
+      <pre id="logs"></pre>
+    </div>
+  </div>
+
+<script>
+const logs = document.getElementById('logs');
+const statusPill = document.getElementById('statusPill');
+const statusText = document.getElementById('statusText');
+const openOutBtn = document.getElementById('openOut');
+const outInput = document.getElementById('out');
+let lastRunSucceeded = false;
+
+function syncOpenOutputButton() {
+  openOutBtn.disabled = !(lastRunSucceeded && outInput.value.trim());
+}
+
+function setStatus(kind, text) {
+  statusPill.className = `pill ${kind}`;
+  statusPill.textContent = kind.charAt(0).toUpperCase() + kind.slice(1);
+  statusText.textContent = text;
+}
+
+async function openOutputFolder() {
+  const out = outInput.value;
+  const res = await fetch('/open-output', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ out })
+  });
+  const msg = await res.text();
+  logs.textContent += `[${new Date().toISOString()}] ${msg}\n`;
+  logs.scrollTop = logs.scrollHeight;
+}
+
+openOutBtn.onclick = openOutputFolder;
+outInput.addEventListener('input', syncOpenOutputButton);
+syncOpenOutputButton();
+
+document.getElementById('start').onclick = async () => {
+  setStatus('running', 'Extraction in progress...');
+  logs.textContent = '';
+  lastRunSucceeded = false;
+  syncOpenOutputButton();
+
+  const payload = {
+    video: document.getElementById('video').value,
+    key: document.getElementById('key').value,
+    out: document.getElementById('out').value,
+    order: document.getElementById('order').value,
+    sleep_ms: Number(document.getElementById('sleep_ms').value || 80),
+    cap_per_thread: Number(document.getElementById('cap_per_thread').value || 5),
+    dry_run: document.getElementById('dry_run').value === 'true'
+  };
+
+  try {
+    const res = await fetch('/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let endedWithError = false;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = decoder.decode(value, { stream: true });
+      logs.textContent += chunk;
+      if (chunk.includes('Error:')) endedWithError = true;
+      logs.scrollTop = logs.scrollHeight;
+    }
+
+    if (endedWithError) {
+      setStatus('error', 'Run finished with error. Check logs.');
+      lastRunSucceeded = false;
+      syncOpenOutputButton();
+    } else {
+      setStatus('finished', 'Run finished successfully.');
+      lastRunSucceeded = true;
+      syncOpenOutputButton();
+    }
+  } catch (err) {
+    logs.textContent += `[${new Date().toISOString()}] Error: ${err.message}\n`;
+    setStatus('error', 'Request failed. Check logs.');
+    lastRunSucceeded = false;
+    syncOpenOutputButton();
+  }
+};
+</script>
+</body>
+</html>
