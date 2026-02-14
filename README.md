@@ -45,10 +45,13 @@ Output:
 - `dist/youtube-comments-extractor.exe`
 
 ## One-click Windows build
-Use `build.bat` (tries `npm ci`, then falls back to `npm install` if no lockfile):
+Use `build.bat` (uses `npm ci` if `package-lock.json` exists, otherwise `npm install`):
 ```bat
-npm ci
-if errorlevel 1 npm install
+if exist package-lock.json (
+  npm ci
+) else (
+  npm install
+)
 npm run build
 ```
 
@@ -84,6 +87,8 @@ CLI flags:
 node src/index.js
 ```
 Or double-click the built `.exe`.
+
+If double-clicking the EXE does not auto-open your browser, the app still runs and prints the local GUI URL in console; open that URL manually.
 
 GUI fields:
 - `video_url_or_id`
@@ -152,7 +157,12 @@ Covers:
 - pagination termination
 
 ## Windows commands (exact)
-Build:
+Build (first run to generate lockfile):
+```powershell
+npm install
+```
+
+Build (after lockfile exists):
 ```powershell
 npm ci
 npm run build
