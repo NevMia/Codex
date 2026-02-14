@@ -4,18 +4,22 @@ const path = require('path');
 const { spawn } = require('child_process');
 const { runExtraction } = require('../extractor');
 
-function safeSpawn(cmd, args, opts) {
-  const child = spawn(cmd, args, opts);
-  // Prevent unhandled 'error' event (e.g., ENOENT when xdg-open isn't available)
-  child.on('error', () => {});
-  return child;
-}
-
 function openBrowser(url) {
-  const opts = { detached: true, stdio: 'ignore' };
-  if (process.platform === 'win32') safeSpawn('cmd', ['/c', 'start', '', url], opts);
-  else if (process.platform === 'darwin') safeSpawn('open', [url], opts);
-  else safeSpawn('xdg-open', [url], opts);
+  let child;
+  if (process.platform === 'win32') {
+    child = spawn('cmd', ['/c', 'start', '', url], { detached: true, stdio: 'ignore' });
+  } else if (process.platform === 'darwin') {
+    child = spawn('open', [url], { detached: true, stdio: 'ignore' });
+  } else {
+    child = spawn('xdg-open', [url], { detached: true, stdio: 'ignore' });
+  }
+
+  // Prevent crash if opener binary is missing or fails (ENOENT, etc.)
+  child.on('error', () => {
+    // Intentionally ignore; GUI still works, user can open URL manually.
+  });
+
+  child.unref();
 }
 
 function startGui() {
@@ -55,9 +59,8 @@ function startGui() {
           });
           log('Completed successfully.');
           log(`Output folder: ${data.out}`);
-          // extractor meta now reports both raw and capped totals
-          if (result?.meta?.totalCountRaw != null) log(`Total count (raw): ${result.meta.totalCountRaw}`);
-          if (result?.meta?.totalCountCappedForSummary != null) log(`Total count (capped for summary): ${result.meta.totalCountCappedForSummary}`);
+          log(`Total count (raw): ${result.meta.totalCountRaw}`);
+          log(`Total count (capped for summary): ${result.meta.totalCountCappedForSummary}`);
         } catch (e) {
           log(`Error: ${e.message}`);
         }
@@ -74,6 +77,7 @@ function startGui() {
     const addr = server.address();
     const url = `http://127.0.0.1:${addr.port}`;
     console.log(`GUI running at ${url}`);
+    console.log(`If your browser did not open automatically, copy/paste this URL: ${url}`);
     openBrowser(url);
   });
 }
