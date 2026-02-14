@@ -43,6 +43,7 @@ async function runExtraction(options) {
     topCsv: path.join(outDir, 'top_level_only.csv'),
     replyCsv: path.join(outDir, 'replies_only.csv'),
     threadStats: path.join(outDir, 'thread_stats.csv'),
+    duplicates: path.join(outDir, 'duplicate_phrases.csv'),
     meta: path.join(outDir, 'meta_summary.json')
   };
 
@@ -58,6 +59,8 @@ async function runExtraction(options) {
 
   const requestCounts = { 'commentThreads': 0, 'comments': 0 };
   const dedupe = new Map();
+  const dupCounts = new Map();
+  const dupExamples = new Map();
   const seenAuthors = new Set();
 
   let totalLikeCount = 0;
@@ -102,8 +105,11 @@ async function runExtraction(options) {
           totalReplyCount: item.snippet?.totalReplyCount ?? 0
         });
 
+        dupCounts.set(record.textClean, (dupCounts.get(record.textClean) || 0) + 1);
+
         if (!dedupe.has(record.textClean)) {
           dedupe.set(record.textClean, true);
+          dupExamples.set(record.textClean, { commentId: record.commentId, isReply: record.isReply });
           wsJsonl.write(JSON.stringify(record) + '\n');
           wsCsv.write(toRow(record));
           wsTop.write(toRow(record));
@@ -158,8 +164,11 @@ async function runExtraction(options) {
               const authorKey = rr.authorChannelId || rr.author || 'unknown';
               stats.authors.set(authorKey, (stats.authors.get(authorKey) || 0) + 1);
 
+              dupCounts.set(rr.textClean, (dupCounts.get(rr.textClean) || 0) + 1);
+
               if (!dedupe.has(rr.textClean)) {
                 dedupe.set(rr.textClean, true);
+                dupExamples.set(rr.textClean, { commentId: rr.commentId, isReply: rr.isReply });
                 wsJsonl.write(JSON.stringify(rr) + '\n');
                 wsCsv.write(toRow(rr));
                 wsReply.write(toRow(rr));
@@ -175,8 +184,9 @@ async function runExtraction(options) {
       }
     }
   } catch (error) {
-    const reason = error.response?.data?.error?.errors?.[0]?.reason;
-    if (error.response?.status === 403 && reason === 'commentsDisabled') {
+    const status = error.status ?? error.response?.status;
+    const reason = error.data?.error?.errors?.[0]?.reason ?? error.response?.data?.error?.errors?.[0]?.reason;
+    if (status === 403 && reason === 'commentsDisabled') {
       throw new Error('Comments are disabled for this video (403 commentsDisabled).');
     }
     if (reason === 'rateLimitExceeded' || reason === 'quotaExceeded') {
@@ -190,11 +200,10 @@ async function runExtraction(options) {
   const cap = Number.isFinite(options.capPerThread) ? options.capPerThread : 5;
   const threadStatsPath = files.threadStats;
   const wsThread = fs.createWriteStream(threadStatsPath, { encoding: 'utf8' });
-  wsThread.write('threadId,topLevelCommentId,totalReplyCount,repliesFetched,uniqueAuthorsInThread,topAuthorShare,flag_reply_war\n');
+  wsThread.write('threadId,topLevelCommentId,totalReplyCount,repliesFetched,repliesCappedForSummary,uniqueAuthorsInThread,topAuthorShare,flag_reply_war\n');
 
   for (const stat of threadStats.values()) {
     const counts = Array.from(stat.authors.values()).sort((a, b) => b - a);
-    const repliesForSummary = Math.min(stat.repliesFetched, cap);
     const uniqueAuthorsInThread = stat.authors.size;
     const topAuthorShare = stat.repliesFetched === 0 ? 0 : (counts[0] || 0) / stat.repliesFetched;
     const flag = stat.repliesFetched >= 25 && (uniqueAuthorsInThread <= 4 || topAuthorShare >= 0.45);
@@ -203,13 +212,28 @@ async function runExtraction(options) {
       csvEscape(stat.topLevelCommentId),
       stat.totalReplyCount,
       stat.repliesFetched,
+      Math.min(stat.repliesFetched, cap),
       uniqueAuthorsInThread,
       topAuthorShare.toFixed(4),
       flag
     ].join(',') + '\n');
-    stat.repliesForSummary = repliesForSummary;
   }
   wsThread.end();
+
+
+  const wsDup = fs.createWriteStream(files.duplicates, { encoding: 'utf8' });
+  wsDup.write('textClean,count,exampleCommentId,isReplyExample\n');
+  for (const [textClean, count] of dupCounts.entries()) {
+    if (count <= 1) continue;
+    const example = dupExamples.get(textClean) || {};
+    wsDup.write([
+      csvEscape(textClean),
+      count,
+      csvEscape(example.commentId || ''),
+      typeof example.isReply === 'boolean' ? example.isReply : ''
+    ].join(',') + '\n');
+  }
+  wsDup.end();
 
   const replyCountCappedForSummary = Array.from(threadStats.values())
     .reduce((acc, s) => acc + Math.min(s.repliesFetched, cap), 0);
@@ -235,7 +259,8 @@ async function runExtraction(options) {
       cap_per_thread: cap,
       dedupeCount: dedupe.size,
       rawRepliesFetched: rawRepliesTotal,
-      repliesExportedAfterDedupe: repliesExported
+      repliesExportedAfterDedupe: repliesExported,
+      duplicatePhrasesCount: Array.from(dupCounts.values()).filter((n) => n > 1).length
     }
   };
 

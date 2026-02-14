@@ -11,8 +11,10 @@ Single-file Windows `.exe` + full source for extracting **all top-level comments
   - `comments_flat.txt`
   - `meta_summary.json`
   - `thread_stats.csv`
+  - `duplicate_phrases.csv`
   - `top_level_only.csv`
   - `replies_only.csv`
+- `duplicate_phrases.csv` (`textClean,count,exampleCommentId,isReplyExample`)
 - Includes `likeCount` and `weight = ln(1 + likeCount)`
 - Minimal cleaning only:
   - strip URLs
@@ -33,6 +35,8 @@ Single-file Windows `.exe` + full source for extracting **all top-level comments
 npm install
 ```
 
+This creates `package-lock.json`, allowing consistent `npm ci` installs afterwards.
+
 ## Build Windows EXE (single file)
 ```bash
 npm run build
@@ -41,9 +45,10 @@ Output:
 - `dist/youtube-comments-extractor.exe`
 
 ## One-click Windows build
-Use `build.bat`:
+Use `build.bat` (tries `npm ci`, then falls back to `npm install` if no lockfile):
 ```bat
 npm ci
+if errorlevel 1 npm install
 npm run build
 ```
 
@@ -122,7 +127,8 @@ textOriginal
 `meta_summary.json` includes:
 - `videoId`
 - `startedAt`, `finishedAt`
-- `topLevelCount`, `replyCount`, `totalCount`
+- `topLevelCount`, `replyCountRaw`, `replyCountCappedForSummary`
+- `totalCountRaw`, `totalCountCappedForSummary`
 - `uniqueAuthorsCount`
 - `totalLikeCount`
 - `requestCounts`
@@ -131,7 +137,7 @@ textOriginal
 
 ## Thread stats
 `thread_stats.csv` columns:
-`threadId,topLevelCommentId,totalReplyCount,repliesFetched,uniqueAuthorsInThread,topAuthorShare,flag_reply_war`
+`threadId,topLevelCommentId,totalReplyCount,repliesFetched,repliesCappedForSummary,uniqueAuthorsInThread,topAuthorShare,flag_reply_war`
 
 Heuristic:
 `flag_reply_war = repliesFetched >= 25 AND (uniqueAuthorsInThread <= 4 OR topAuthorShare >= 0.45)`
