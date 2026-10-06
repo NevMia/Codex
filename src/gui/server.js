@@ -14,12 +14,36 @@ function openBrowser(url) {
     child = spawn('xdg-open', [url], { detached: true, stdio: 'ignore' });
   }
 
-  // Prevent crash if opener binary is missing or fails (ENOENT, etc.)
   child.on('error', () => {
     // Intentionally ignore; GUI still works, user can open URL manually.
   });
 
   child.unref();
+}
+
+function openOutputFolder(dirPath) {
+  let child;
+  if (process.platform === 'win32') {
+    child = spawn('explorer.exe', [dirPath], { detached: true, stdio: 'ignore' });
+  } else if (process.platform === 'darwin') {
+    child = spawn('open', [dirPath], { detached: true, stdio: 'ignore' });
+  } else {
+    child = spawn('xdg-open', [dirPath], { detached: true, stdio: 'ignore' });
+  }
+  child.on('error', () => {});
+  child.unref();
+}
+
+
+function resolveOutputPath(inputPath) {
+  const trimmed = String(inputPath || '').trim();
+  if (!trimmed) return '';
+
+  // Support Windows absolute paths like C:\folder even when running on non-Windows hosts.
+  if (/^[a-zA-Z]:\\/.test(trimmed)) return trimmed;
+
+  // Relative paths resolve from app working directory (same base as extraction output path logic).
+  return path.resolve(trimmed);
 }
 
 function startGui() {
@@ -33,17 +57,55 @@ function startGui() {
       return;
     }
 
+    if (req.method === 'POST' && req.url === '/open-output') {
+      let body = '';
+      req.on('data', (c) => { body += c; });
+      req.on('end', () => {
+        try {
+          const data = JSON.parse(body || '{}');
+          const out = String(data.out || '').trim();
+          if (!out) {
+            res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+            res.end('Missing output folder path');
+            return;
+          }
+
+          const resolved = resolveOutputPath(out);
+          if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
+            res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+            res.end('Output folder does not exist');
+            return;
+          }
+
+          openOutputFolder(resolved);
+          res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+          res.end(`Opened: ${resolved}`);
+        } catch {
+          res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+          res.end('Invalid request');
+        }
+      });
+      return;
+    }
+
     if (req.method === 'POST' && req.url === '/start') {
       let body = '';
       req.on('data', (c) => { body += c; });
       req.on('end', async () => {
+        let data;
+        try {
+          data = JSON.parse(body || '{}');
+        } catch {
+          res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+          res.end('Invalid request');
+          return;
+        }
         res.writeHead(200, {
           'Content-Type': 'text/plain; charset=utf-8',
           'Cache-Control': 'no-cache',
           Connection: 'keep-alive'
         });
 
-        const data = JSON.parse(body || '{}');
         const log = (msg) => res.write(`[${new Date().toISOString()}] ${msg}\n`);
 
         try {
@@ -80,6 +142,7 @@ function startGui() {
     console.log(`If your browser did not open automatically, copy/paste this URL: ${url}`);
     openBrowser(url);
   });
+  return server;
 }
 
 module.exports = { startGui };

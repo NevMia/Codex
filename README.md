@@ -6,7 +6,8 @@ Single-file Windows `.exe` + full source for extracting **all top-level comments
 - Official YouTube Data API v3 only (`commentThreads.list` + `comments.list`)
 - Full pagination with `pageToken` loops until no `nextPageToken`
 - Exports:
-  - `comments_raw.jsonl`
+  - `comments_raw.jsonl` (no dedupe; every fetched comment/reply)
+  - `comments_deduped.jsonl` (dedupe by `textClean`, keep first)
   - `comments_flat.csv`
   - `comments_flat.txt`
   - `meta_summary.json`
@@ -100,6 +101,7 @@ GUI fields:
 - Start button
 - progress indicator
 - live logs
+- Open output folder button (enabled after successful run)
 
 ## Output schema
 Each record contains:

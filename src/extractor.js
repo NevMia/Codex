@@ -37,7 +37,8 @@ async function runExtraction(options) {
   fs.mkdirSync(outDir, { recursive: true });
 
   const files = {
-    jsonl: path.join(outDir, 'comments_raw.jsonl'),
+    jsonlRaw: path.join(outDir, 'comments_raw.jsonl'),
+    jsonlDeduped: path.join(outDir, 'comments_deduped.jsonl'),
     csv: path.join(outDir, 'comments_flat.csv'),
     txt: path.join(outDir, 'comments_flat.txt'),
     topCsv: path.join(outDir, 'top_level_only.csv'),
@@ -47,7 +48,8 @@ async function runExtraction(options) {
     meta: path.join(outDir, 'meta_summary.json')
   };
 
-  const wsJsonl = fs.createWriteStream(files.jsonl, { encoding: 'utf8' });
+  const wsJsonlRaw = fs.createWriteStream(files.jsonlRaw, { encoding: 'utf8' });
+  const wsJsonlDeduped = fs.createWriteStream(files.jsonlDeduped, { encoding: 'utf8' });
   const wsCsv = fs.createWriteStream(files.csv, { encoding: 'utf8' });
   const wsTxt = fs.createWriteStream(files.txt, { encoding: 'utf8' });
   const wsTop = fs.createWriteStream(files.topCsv, { encoding: 'utf8' });
@@ -64,7 +66,7 @@ async function runExtraction(options) {
   const seenAuthors = new Set();
 
   let totalLikeCount = 0;
-  let topLevelExported = 0;
+  let rawTopLevelTotal = 0;
   let repliesExported = 0;
   let rawRepliesTotal = 0;
 
@@ -106,15 +108,16 @@ async function runExtraction(options) {
         });
 
         dupCounts.set(record.textClean, (dupCounts.get(record.textClean) || 0) + 1);
+        wsJsonlRaw.write(JSON.stringify(record) + '\n');
+        rawTopLevelTotal += 1;
 
         if (!dedupe.has(record.textClean)) {
           dedupe.set(record.textClean, true);
           dupExamples.set(record.textClean, { commentId: record.commentId, isReply: record.isReply });
-          wsJsonl.write(JSON.stringify(record) + '\n');
+          wsJsonlDeduped.write(JSON.stringify(record) + '\n');
           wsCsv.write(toRow(record));
           wsTop.write(toRow(record));
           appendTxt(wsTxt, record);
-          topLevelExported += 1;
           totalLikeCount += record.likeCount;
           seenAuthors.add(record.authorChannelId || record.author);
         }
@@ -165,11 +168,12 @@ async function runExtraction(options) {
               stats.authors.set(authorKey, (stats.authors.get(authorKey) || 0) + 1);
 
               dupCounts.set(rr.textClean, (dupCounts.get(rr.textClean) || 0) + 1);
+              wsJsonlRaw.write(JSON.stringify(rr) + '\n');
 
               if (!dedupe.has(rr.textClean)) {
                 dedupe.set(rr.textClean, true);
                 dupExamples.set(rr.textClean, { commentId: rr.commentId, isReply: rr.isReply });
-                wsJsonl.write(JSON.stringify(rr) + '\n');
+                wsJsonlDeduped.write(JSON.stringify(rr) + '\n');
                 wsCsv.write(toRow(rr));
                 wsReply.write(toRow(rr));
                 appendTxt(wsTxt, rr);
@@ -194,7 +198,7 @@ async function runExtraction(options) {
     }
     throw error;
   } finally {
-    wsJsonl.end(); wsCsv.end(); wsTxt.end(); wsTop.end(); wsReply.end();
+    wsJsonlRaw.end(); wsJsonlDeduped.end(); wsCsv.end(); wsTxt.end(); wsTop.end(); wsReply.end();
   }
 
   const cap = Number.isFinite(options.capPerThread) ? options.capPerThread : 5;
@@ -244,11 +248,11 @@ async function runExtraction(options) {
     videoId,
     startedAt,
     finishedAt: new Date().toISOString(),
-    topLevelCount: topLevelExported,
+    topLevelCount: rawTopLevelTotal,
     replyCountRaw,
     replyCountCappedForSummary,
-    totalCountRaw: topLevelExported + replyCountRaw,
-    totalCountCappedForSummary: topLevelExported + replyCountCappedForSummary,
+    totalCountRaw: rawTopLevelTotal + replyCountRaw,
+    totalCountCappedForSummary: rawTopLevelTotal + replyCountCappedForSummary,
     uniqueAuthorsCount: seenAuthors.size,
     totalLikeCount,
     requestCounts,
