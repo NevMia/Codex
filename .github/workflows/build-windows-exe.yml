@@ -15,7 +15,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
 
       - name: Install dependencies
         run: |
@@ -24,6 +23,9 @@ jobs:
           } else {
             npm install
           }
+
+      - name: Test
+        run: npm test
 
       - name: Build EXE
         run: npm run build
