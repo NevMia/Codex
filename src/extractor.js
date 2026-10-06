@@ -66,7 +66,7 @@ async function runExtraction(options) {
   const seenAuthors = new Set();
 
   let totalLikeCount = 0;
-  let topLevelExported = 0;
+  let rawTopLevelTotal = 0;
   let repliesExported = 0;
   let rawRepliesTotal = 0;
 
@@ -109,6 +109,7 @@ async function runExtraction(options) {
 
         dupCounts.set(record.textClean, (dupCounts.get(record.textClean) || 0) + 1);
         wsJsonlRaw.write(JSON.stringify(record) + '\n');
+        rawTopLevelTotal += 1;
 
         if (!dedupe.has(record.textClean)) {
           dedupe.set(record.textClean, true);
@@ -117,7 +118,6 @@ async function runExtraction(options) {
           wsCsv.write(toRow(record));
           wsTop.write(toRow(record));
           appendTxt(wsTxt, record);
-          topLevelExported += 1;
           totalLikeCount += record.likeCount;
           seenAuthors.add(record.authorChannelId || record.author);
         }
@@ -248,11 +248,11 @@ async function runExtraction(options) {
     videoId,
     startedAt,
     finishedAt: new Date().toISOString(),
-    topLevelCount: topLevelExported,
+    topLevelCount: rawTopLevelTotal,
     replyCountRaw,
     replyCountCappedForSummary,
-    totalCountRaw: topLevelExported + replyCountRaw,
-    totalCountCappedForSummary: topLevelExported + replyCountCappedForSummary,
+    totalCountRaw: rawTopLevelTotal + replyCountRaw,
+    totalCountCappedForSummary: rawTopLevelTotal + replyCountCappedForSummary,
     uniqueAuthorsCount: seenAuthors.size,
     totalLikeCount,
     requestCounts,

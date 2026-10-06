@@ -92,13 +92,20 @@ function startGui() {
       let body = '';
       req.on('data', (c) => { body += c; });
       req.on('end', async () => {
+        let data;
+        try {
+          data = JSON.parse(body || '{}');
+        } catch {
+          res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+          res.end('Invalid request');
+          return;
+        }
         res.writeHead(200, {
           'Content-Type': 'text/plain; charset=utf-8',
           'Cache-Control': 'no-cache',
           Connection: 'keep-alive'
         });
 
-        const data = JSON.parse(body || '{}');
         const log = (msg) => res.write(`[${new Date().toISOString()}] ${msg}\n`);
 
         try {
@@ -135,6 +142,7 @@ function startGui() {
     console.log(`If your browser did not open automatically, copy/paste this URL: ${url}`);
     openBrowser(url);
   });
+  return server;
 }
 
 module.exports = { startGui };
